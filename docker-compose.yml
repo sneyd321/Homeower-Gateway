@@ -1,0 +1,17 @@
+version: '3.5'
+
+services: 
+    homeowner-gateway:
+        image: sneyd321/gateway
+
+        ports: 
+            - 8080:8080
+        networks: 
+            - roomr-network
+        volumes:
+            - ./:/usr/src/app 
+
+        restart: on-failure
+
+networks: 
+    roomr-network:
