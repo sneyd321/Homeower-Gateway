@@ -1,0 +1,30 @@
+#apiVersion: networking.k8s.io/v1beta1
+#kind: Ingress
+#metadata:
+#  name: basic-ingress
+#spec:
+#  backend:
+#    serviceName: homeowner-gateway
+#    servicePort: 8080
+
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: simple-fanout-example
+  annotations:
+    kubernetes.io/ingress.global-static-ip-name: roomr-static-ip
+    ingress.kubernetes.io/rewrite-target: /
+spec:
+  rules:
+    
+    - http:
+        paths:
+          - backend:
+              serviceName: homeowner-gateway
+              servicePort: 8080
+            path: /homeowner-gateway/*
+          - backend:
+              serviceName: tenant-gateway
+              servicePort: 8079
+            path: /tenant-gateway/*
+        

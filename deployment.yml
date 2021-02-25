@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: homeowner-gateway
+spec:
+  selector:
+    matchLabels:
+      run: homeowner-gateway
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        run: homeowner-gateway
+    spec:
+      containers:
+      - name: homeowner-gateway
+        image: sneyd321/homeowner-gateway
+        ports:
+        - containerPort: 8080
+        
+      imagePullSecrets:
+        - name: key

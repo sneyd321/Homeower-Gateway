@@ -1,20 +1,26 @@
 from . import api
 from flask import request, Response, jsonify
-import requests, uuid, pika, json
+import requests, json
+
 
 def get_homeowner_service():
-    return "http://192.168.0.115:8081/homeowner/v1/"
+    return "http://host.docker.internal:8081/homeowner/v1/"
+    #return "http://homeowner-service.default.svc.cluster.local:8081/homeowner/v1/"
 
 def get_house_service():
-    return "http://192.168.0.115:8082/house/v1/"
+    
+    return "http://house-service.default.svc.cluster.local:8082/house/v1/"
    
 
+
+
+
 def handle_post(url, request):
-    try:
-        response = requests.post(url, json=request.get_json(), headers=request.headers)
-        return Response(response=response.text, status=response.status_code)
-    except requests.exceptions.ConnectionError:
-        return Response(response="Error: Service currently unavailable.", status=503)
+
+    response = requests.post(url, json=request.get_json(), headers=request.headers)
+    return Response(response=response.text, status=response.status_code)
+
+   
 
 def handle_put(url, request):
     try: 
@@ -35,20 +41,49 @@ def handle_get(url, request):
 
 def authenticate_homeowner(request):
     try:
-        response = requests.get(get_homeowner_service() + "verifyHomeowner", headers=request.headers)
+        response = requests.get(get_homeowner_service() + "Verify", headers=request.headers)
         if response.ok:
             return response.json()
         return None
     except requests.exceptions.ConnectionError:
         return None
    
+def authenticate_house(request):
+    try:
+        response = requests.get(get_house_service() + "Verify", headers=request.headers)
+        if response.ok:
+            return response.json()
+        return None
+    except requests.exceptions.ConnectionError:
+        return None
 
 
 #############################################################
-@api.route("/", methods=["GET"])
-def create_homeowner_account():
-    return get_homeowner_service() + "SignUp"
 
+@api.route("/", methods=["GET", "POST"])
+def create_homeowner_account():
+    if request.method == "GET":
+        try:
+            response = requests.get(get_homeowner_service() + "SignUp", headers=request.headers)
+            if response.ok:
+                return response.text
+            return Response(response=response.text, status=response.status_code)
+        except requests.exceptions.ConnectionError:
+            return Response(response="Error: Service currently unavailable.", status=503)
+
+    if request.method == "POST":
+        print(request.form, flush=True)
+        try:
+            response = requests.post(get_homeowner_service() + "SignUp", data=request.form, headers=request.headers)
+            if response.ok:
+                return response.text
+            return Response(response=response.text, status=response.status_code)
+        except requests.exceptions.ConnectionError:
+            return Response(response="Error: Service currently unavailable.", status=503)
+
+
+
+    
 @api.route("Homeowner")
 def get_homeowner():
     homeownerData = authenticate_homeowner(request)
@@ -60,17 +95,20 @@ def get_homeowner():
 
 @api.route("House", methods=["POST"])
 def create_house():
-    homeownerData = authenticate_homeowner(request)
-    if homeownerData:
-        try:
-            houseData = request.get_json()
-            houseData["homeownerId"] = homeownerData["homeownerId"]
-            response = requests.post(url = get_house_service() + "House", json=request.get_json(), headers=request.headers)
-            return Response(response=response.text, status=response.status_code)
-        except requests.exceptions.ConnectionError:
-            return Response(response="Error: Service currently unavailable.", status=503)
-    return Response(response="Not Authenticated", status=401)
-        
+    try:
+        homeownerData = authenticate_homeowner(request)
+        if homeownerData:
+            try:
+                houseData = request.get_json()
+                houseData["homeownerId"] = homeownerData["homeownerId"]
+                response = requests.post(url = get_house_service() + "House", json=request.get_json(), headers=request.headers)
+                return Response(response=response.text, status=response.status_code)
+            except requests.exceptions.ConnectionError:
+                return Response(response="Error: Service currently unavailable.", status=503)
+        return Response(response="Not Authenticated", status=401)
+    except KeyError as e:
+        return Response(response="Error: Invalid key entry " + str(e), status=400)
+
         
 @api.route("Homeowner/House")
 def get_houses():
@@ -100,15 +138,16 @@ def update_tenant(tenantId):
     return Response(response="Not Authorized", status=401)
 
 ##########################################################
+
 @api.route("Login", methods=["GET"])
 def login_homeowner():
     url = get_homeowner_service() + "login"
     return handle_post(url, request)
 
 ####################################################
-
 @api.route("Lease", methods=["POST"])
 def upload_lease_agreement():
+    print("Test")
     homeownerData = authenticate_homeowner(request)
     if homeownerData:
         homeowner = handle_get(get_homeowner_service() + "Homeowner", request)

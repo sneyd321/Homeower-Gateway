@@ -2,10 +2,11 @@ version: '3.5'
 
 services: 
     homeowner-gateway:
-        image: sneyd321/gateway
+        image: sneyd321/homeowner-gateway
 
         ports: 
             - 8080:8080
+            
         networks: 
             - roomr-network
         volumes:
