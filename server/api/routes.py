@@ -1,188 +1,374 @@
+from server.api.RequestManager import HomeownerManager, HouseGatewayManager, Zookeeper, RequestManager
 from . import api
-from flask import request, Response, jsonify
+from flask import request, Response, jsonify, redirect
 import requests, json
 
 
-def get_homeowner_service():
-    return "http://host.docker.internal:8081/homeowner/v1/"
-    #return "http://homeowner-service.default.svc.cluster.local:8081/homeowner/v1/"
-
-def get_house_service():
-    
-    return "http://house-service.default.svc.cluster.local:8082/house/v1/"
-   
 
 
-
-
-def handle_post(url, request):
-
-    response = requests.post(url, json=request.get_json(), headers=request.headers)
-    return Response(response=response.text, status=response.status_code)
-
-   
-
-def handle_put(url, request):
-    try: 
-        response = requests.put(url, json=request.get_json(), headers=request.headers)
-        return Response(response=response.text, status=response.status_code)
-    except requests.exceptions.ConnectionError:
-        return Response(response="Error: Service currently unavailable.", status=503)
-
-
-def handle_get(url, request):
-    try:
-        response = requests.get(url, headers=request.headers)
-        if response.ok:
-            return jsonify(response.json())
-        return Response(response=response.text, status=response.status_code)
-    except requests.exceptions.ConnectionError:
-        return Response(response="Error: Service currently unavailable.", status=503)
-
-def authenticate_homeowner(request):
-    try:
-        response = requests.get(get_homeowner_service() + "Verify", headers=request.headers)
-        if response.ok:
-            return response.json()
-        return None
-    except requests.exceptions.ConnectionError:
-        return None
-   
-def authenticate_house(request):
-    try:
-        response = requests.get(get_house_service() + "Verify", headers=request.headers)
-        if response.ok:
-            return response.json()
-        return None
-    except requests.exceptions.ConnectionError:
-        return None
-
+zookeeper = Zookeeper()
 
 #############################################################
 
-@api.route("/", methods=["GET", "POST"])
+@api.route("/")
+def get_homeowner_account():
+    service = zookeeper.get_service("homeowner-service")
+    if service:
+        manager = RequestManager(request, service)
+        return manager.get_html("/homeowner/v1/")
+    return Response(response="Error: Zookeeper down", status=503)
+
+
+@api.route("/", methods=["POST"])
 def create_homeowner_account():
-    if request.method == "GET":
-        try:
-            response = requests.get(get_homeowner_service() + "SignUp", headers=request.headers)
-            if response.ok:
-                return response.text
-            return Response(response=response.text, status=response.status_code)
-        except requests.exceptions.ConnectionError:
-            return Response(response="Error: Service currently unavailable.", status=503)
-
-    if request.method == "POST":
-        print(request.form, flush=True)
-        try:
-            response = requests.post(get_homeowner_service() + "SignUp", data=request.form, headers=request.headers)
-            if response.ok:
-                return response.text
-            return Response(response=response.text, status=response.status_code)
-        except requests.exceptions.ConnectionError:
-            return Response(response="Error: Service currently unavailable.", status=503)
-
-
-
+    service = zookeeper.get_service("homeowner-service")
+    if service:
+        manager = RequestManager(request, service)
+        return manager.post_html("/homeowner/v1/")
+    return Response(response="Error: Zookeeper down", status=503)
     
+
+
 @api.route("Homeowner")
 def get_homeowner():
-    homeownerData = authenticate_homeowner(request)
-    if homeownerData:
-        url = get_homeowner_service() + "Homeowner"
-        return handle_get(url, request)
-    return Response(response="Not Authorized", status=401)
-#############################################################
-
-@api.route("House", methods=["POST"])
-def create_house():
-    try:
-        homeownerData = authenticate_homeowner(request)
-        if homeownerData:
-            try:
-                houseData = request.get_json()
-                houseData["homeownerId"] = homeownerData["homeownerId"]
-                response = requests.post(url = get_house_service() + "House", json=request.get_json(), headers=request.headers)
-                return Response(response=response.text, status=response.status_code)
-            except requests.exceptions.ConnectionError:
-                return Response(response="Error: Service currently unavailable.", status=503)
-        return Response(response="Not Authenticated", status=401)
-    except KeyError as e:
-        return Response(response="Error: Invalid key entry " + str(e), status=400)
-
-        
-@api.route("Homeowner/House")
-def get_houses():
-    homeownerData = authenticate_homeowner(request)
-    if homeownerData:
-        url = get_house_service() + "Homeowner/" + str(homeownerData["homeownerId"]) + "/House"
-        return handle_get(url, request)
-    return Response(response="Not Authorized", status=401)
-
-
-
-#############################################################
-@api.route("House/<int:houseId>/Tenant")
-def get_tenants_by_house_id(houseId):
-    homeownerData = authenticate_homeowner(request)
-    if homeownerData:
-        url = get_house_service() + "House/" + str(houseId) + "/Tenant"
-        return handle_get(url, request)
-    return Response(response="Not Authorized", status=401)
-
-@api.route("Tenant/<int:tenantId>/Approve", methods=["PUT"])
-def update_tenant(tenantId):
-    homeownerData = authenticate_homeowner(request)
-    if homeownerData:
-        url = get_house_service() + "Tenant/" + str(tenantId) + "/Approve"
-        return handle_put(url, request)
-    return Response(response="Not Authorized", status=401)
-
-##########################################################
+    service = zookeeper.get_service("homeowner-service")
+    if service:
+        manager = RequestManager(request, service)
+        homeownerId = manager.authenticate()
+        if homeownerId:
+            return manager.get("homeowner/v1/Homeowner")
+        return Response(response="Not Authorized", status=401)
+    return Response(response="Error: Zookeeper down", status=503)
+    
 
 @api.route("Login", methods=["GET"])
 def login_homeowner():
-    url = get_homeowner_service() + "login"
-    return handle_post(url, request)
+    service = zookeeper.get_service("homeowner-service")
+    if service:
+        manager = RequestManager(request, service)
+        return manager.post("homeowner/v1/login")
+    return Response(response="Error: Zookeeper down", status=503)
+   
 
-####################################################
-@api.route("Lease", methods=["POST"])
-def upload_lease_agreement():
-    print("Test")
-    homeownerData = authenticate_homeowner(request)
-    if homeownerData:
-        homeowner = handle_get(get_homeowner_service() + "Homeowner", request)
-        leaseData = request.get_json()
-        leaseData["homeowner"] = homeowner.json
-        try:
-            response = requests.post(get_house_service() + "Lease", json=leaseData, headers=request.headers)
-            return Response(response=response.text, status=response.status_code)
-        except requests.exceptions.ConnectionError:
-            return Response(response="Error: Service currently unavailable.", status=503)
-    return Response(response="Not Authorized", status=401)
+
+#############################################################
+
+@api.route("House")
+def get_arrangement_form():
+    homeownerService = zookeeper.get_service("homeowner-service")
+    if homeownerService:
+        homeownerManager = RequestManager(request, homeownerService)
+        homeownerId = homeownerManager.authenticate()
+        if homeownerId:
+            houseService = zookeeper.get_service("house-service")
+            if houseService:
+                houseManager = RequestManager(request, houseService)
+                return houseManager.get_html("/house/v1/House/" + str(homeownerId))
+            return Response(response="Error: House Service Currently Unavailable", status=503)
+        return Response(response="Not Authorized", status=401)
+    return Response(response="Error: Homeowner Not Available", status=503)
+
+  
+
+
+@api.route("House", methods=["POST"])
+def create_arrangement():
+    homeownerService = zookeeper.get_service("homeowner-service")
+    if homeownerService:
+        headers = {"Authorization": "Bearer " + request.form.get("token") }
+        homeownerManager = RequestManager(request, homeownerService)
+        homeownerId = homeownerManager.authenticate(headers=headers)
+        if homeownerId:
+            houseService = zookeeper.get_service("house-service")
+            if houseService:
+                houseManager = RequestManager(request, houseService)
+                return houseManager.post_html("/house/v1/House/" + str(homeownerId), headers=headers)
+            return Response(response="Error: House Service Currently Unavailable", status=503)
+        return Response(response="Not Authorized", status=401)
+    return Response(response="Error: Homeowner Not Available", status=503)
     
+    
+    
+    
+
+
+@api.route("HomeownerLocation/<string:province>/<string:arrangement>/<int:homeownerId>/<int:houseId>")
+def get_homeowner_location_form(province, arrangement, homeownerId, houseId):
+    houseService = zookeeper.get_service("house-service")
+    if houseService:
+        houseManager = RequestManager(request, houseService)
+        return houseManager.get_html("/house/v1/HomeownerLocation/" + province + "/" + arrangement + "/" + str(homeownerId) + "/" + str(houseId))
+    return Response(response="Error: House Not Available", status=503)
+   
+
+
+@api.route("HomeownerLocation/<string:province>/<string:arrangement>/<int:homeownerId>/<int:houseId>", methods=["POST"])
+def create_homeowner_location(province, arrangement, homeownerId, houseId):
+    houseService = zookeeper.get_service("house-service")
+    if houseService:
+        houseManager = RequestManager(request, houseService)
+        return houseManager.post_html("/house/v1/HomeownerLocation/" + province + "/" + arrangement + "/" + str(homeownerId) + "/" + str(houseId))
+    return Response(response="Error: House Not Available", status=503)
+
+
+@api.route("RentalUnitLocation/<string:province>/<int:houseId>")
+def get_rental_unit_location_form(province,  houseId):
+    houseService = zookeeper.get_service("house-service")
+    if houseService:
+        houseManager = RequestManager(request, houseService)
+        return houseManager.get_html("/house/v1/RentalUnitLocation/" + province + "/" + str(houseId))
+    return Response(response="Error: House Not Available", status=503)
+
+   
+
+@api.route("RentalUnitLocation/<string:province>/<int:houseId>", methods=["POST"])
+def create_rental_unit_location(province, houseId):
+    houseService = zookeeper.get_service("house-service")
+    if houseService:
+        houseManager = RequestManager(request, houseService)
+        return houseManager.post_html("/house/v1/RentalUnitLocation/" + province + "/" + str(houseId))
+    return Response(response="Error: House Not Available", status=503)
+   
+
+
+@api.route("HouseComplete/<int:houseId>", methods=["POST", "GET"])
+def house_complete(houseId):
+    houseService = zookeeper.get_service("house-service")
+    if houseService:
+        houseManager = RequestManager(request, houseService)
+        return houseManager.post_html("/house/v1/HouseComplete/" + str(houseId))
+    return Response(response="Error: House Service Currently Unavailable", status=503)
+
+   
+    
+@api.route("FormComplete")
+def form_complete():
+    return Response(status=204)
+
+
+
+
+
+
+
+
+@api.route("RentDetails/<string:province>/<int:houseId>")
+def view_rent_details(province, houseId):
+    homeownerService = zookeeper.get_service("homeowner-service")
+    if homeownerService:
+        homeownerManager = RequestManager(request, homeownerService)
+        homeownerId = homeownerManager.authenticate()
+        if homeownerId:
+            leaseService = zookeeper.get_service("lease-service")
+            if leaseService:
+                leaseManager = RequestManager(request, leaseService)
+                return leaseManager.get_html("/lease/v1/RentDetails/" + province + "/" + str(houseId))
+            return Response(response="Error: House Service Currently Unavailable", status=503)
+        return Response(response="Not Authorized", status=401)
+    return Response(response="Error: Lease Not Available", status=503)
+
+
+@api.route("RentDetails/<string:province>/<int:houseId>", methods=["POST"])
+def create_rent_details(province, houseId):
+    homeownerService = zookeeper.get_service("homeowner-service")
+    if homeownerService:
+        headers = {"Authorization": "Bearer " + request.form.get("token") }
+        homeownerManager = RequestManager(request, homeownerService)
+        homeownerId = homeownerManager.authenticate(headers=headers)
+        if homeownerId:
+            leaseService = zookeeper.get_service("lease-service")
+            if leaseService:
+                leaseManager = RequestManager(request, leaseService)
+                return leaseManager.post_html("/lease/v1/RentDetails/" + province + "/" + str(houseId), headers=headers)
+            return Response(response="Error: House Service Currently Unavailable", status=503)
+        return Response(response="Not Authorized", status=401)
+    return Response(response="Error: Lease Not Available", status=503)
+
+    
+
+@api.route("Amenities/<string:province>/<int:houseId>")
+def view_amenities(province, houseId):
+    leaseService = zookeeper.get_service("lease-service")
+    if leaseService:
+        leaseManager = RequestManager(request, leaseService)
+        return leaseManager.get_html("/lease/v1/Amenities/" + province + "/" + str(houseId))
+    return Response(response="Error: Lease Not Available", status=503)
+    
+   
+
+@api.route("Amenities/<string:province>/<int:houseId>", methods=["POST"])
+def create_amenities(province, houseId):
+    leaseService = zookeeper.get_service("lease-service")
+    if leaseService:
+        leaseManager = RequestManager(request, leaseService)
+        return leaseManager.post_html("/lease/v1/Amenities/" + province + "/" + str(houseId))
+    return Response(response="Error: Lease Not Available", status=503)
+    
+
+
+@api.route("Utilities/<string:province>/<int:houseId>")
+def view_utilites(province, houseId):
+    leaseService = zookeeper.get_service("lease-service")
+    if leaseService:
+        leaseManager = RequestManager(request, leaseService)
+        return leaseManager.get_html("/lease/v1/Utilities/" + province + "/" + str(houseId))
+    return Response(response="Error: Lease Not Available", status=503)
+
+   
+
+    
+@api.route("Utilities/<string:province>/<int:houseId>", methods=["POST"])
+def create_utilites(province, houseId):
+    leaseService = zookeeper.get_service("lease-service")
+    if leaseService:
+        leaseManager = RequestManager(request, leaseService)
+        return leaseManager.post_html("/lease/v1/Utilities/" + province + "/" + str(houseId))
+    return Response(response="Error: Lease Not Available", status=503)
+    
+
+
+@api.route("LeaseComplete/<string:province>/<int:houseId>")
+def lease_complete(province, houseId):
+    leaseService = zookeeper.get_service("lease-service")
+    if leaseService:
+        leaseManager = RequestManager(request, leaseService)
+        return leaseManager.post_html("/lease/v1/LeaseComplete/" + province + "/" + str(houseId))
+    return Response(response="Error: Lease Not Available", status=503)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+@api.route("Homeowner/House")
+def get_houses():
+    homeownerService = zookeeper.get_service("homeowner-service")
+    if homeownerService:
+        homeownerManager = RequestManager(request, homeownerService)
+        homeownerId = homeownerManager.authenticate()
+        if homeownerId:
+            tenantService = zookeeper.get_service("house-service")
+            if tenantService:
+                tenantManager = RequestManager(request, tenantService)
+                return tenantManager.get("house/v1/Homeowner/" + str(homeownerId) + "/House")
+            return Response(response="Error: Tenant Not Available", status=503)
+        return Response(response="Not Authorized", status=401)
+    return Response(response="Error: Homeowner Not Available", status=503)
+
+
+#############################################################
+
+
+@api.route("House/<int:houseId>/Tenant")
+def get_tenants_by_house_id(houseId):
+    homeownerService = zookeeper.get_service("homeowner-service")
+    if homeownerService:
+        homeownerManager = RequestManager(request, homeownerService)
+        homeownerId = homeownerManager.authenticate()
+        if homeownerId:
+            tenantService = zookeeper.get_service("tenant-service")
+            if tenantService:
+                tenantManager = RequestManager(request, tenantService)
+                return tenantManager.get("tenant/v1/House/" + str(houseId) + "/Tenant")
+            return Response(response="Error: Tenant Not Available", status=503)
+        return Response(response="Not Authorized", status=401)
+    return Response(response="Error: Homeowner Not Available", status=503)
+
+
+@api.route("Tenant/<int:tenantId>/Approve", methods=["PUT"])
+def update_tenant(tenantId):
+    homeownerService = zookeeper.get_service("homeowner-service")
+    if homeownerService:
+        homeownerManager = RequestManager(request, homeownerService)
+        homeownerId = homeownerManager.authenticate()
+        if homeownerId:
+            tenantService = zookeeper.get_service("tenant-service")
+            if tenantService:
+                tenantManager = RequestManager(request, tenantService)
+                return tenantManager.put("tenant/v1/Tenant/" + str(tenantId) + "/Approve")
+            return Response(response="Error: Tenant Not Available", status=503)
+        return Response(response="Not Authorized", status=401)
+    return Response(response="Error: Homeowner Not Available", status=503)
+  
+
 ###################################################
 
 
 @api.route("House/<int:houseId>/Problem")
 def get_problems(houseId):
-    homeownerData = authenticate_homeowner(request)
-    if homeownerData:
-        url = get_house_service() + "House/" + str(houseId) + "/Problem"
-        return handle_get(url, request)
-    return Response(response="Not Authorized", status=401)
+    homeownerService = zookeeper.get_service("homeowner-service")
+    if homeownerService:
+        homeownerManager = RequestManager(request, homeownerService)
+        homeownerId = homeownerManager.authenticate()
+        if homeownerId:
+            problemService = zookeeper.get_service("problem-service")
+            if problemService:
+                problemManager = RequestManager(request, problemService)
+                return problemManager.get("problem/v1/House/" + str(houseId) + "/Problem")
+            return Response(response="Error: problem service Not Available", status=503)
+        return Response(response="Not Authorized", status=401)
+    return Response(response="Error: Homeowner Not Available", status=503)
+  
 
 @api.route("Problem/<int:problemId>")
 def get_problem(problemId):
-    homeownerData = authenticate_homeowner(request)
-    if homeownerData:
-        url = get_house_service() + "Problem/" + str(problemId)
-        return handle_get(url, request)
-    return Response(response="Not Authorized", status=401)
+    homeownerService = zookeeper.get_service("homeowner-service")
+    if homeownerService:
+        homeownerManager = RequestManager(request, homeownerService)
+        homeownerId = homeownerManager.authenticate()
+        if homeownerId:
+            tenantService = zookeeper.get_service("problem-service")
+            if tenantService:
+                tenantManager = RequestManager(request, tenantService)
+                return tenantManager.get("problem/v1/Problem/" + str(problemId))
+            return Response(response="Error: Tenant Not Available", status=503)
+        return Response(response="Not Authorized", status=401)
+    return Response(response="Error: Homeowner Not Available", status=503)
+  
+
 
 @api.route("Problem/<int:problemId>/Status", methods=["PUT"])
 def put_problem(problemId):
-    homeownerData = authenticate_homeowner(request)
-    if homeownerData:
-        url = get_house_service() + "Problem/" + str(problemId) + "/Status"
-        return handle_put(url, request)
-    return Response(response="Not Authorized", status=401)
+    homeownerService = zookeeper.get_service("homeowner-service")
+    if homeownerService:
+        homeownerManager = RequestManager(request, homeownerService)
+        homeownerId = homeownerManager.authenticate()
+        if homeownerId:
+            tenantService = zookeeper.get_service("problem-service")
+            if tenantService:
+                tenantManager = RequestManager(request, tenantService)
+                return tenantManager.put("problem/v1/Problem/" + str(problemId) + "/Status")
+            return Response(response="Error: Tenant Not Available", status=503)
+        return Response(response="Not Authorized", status=401)
+    return Response(response="Error: Homeowner Not Available", status=503)
+
+@api.route("/Document/<int:houseId>")
+def get_homeowner_documents(houseId):
+    homeownerService = zookeeper.get_service("homeowner-service")
+    if homeownerService:
+        homeownerManager = RequestManager(request, homeownerService)
+        homeownerId = homeownerManager.authenticate()
+        if homeownerId:
+            documentService = zookeeper.get_service("document-service")
+            if documentService:
+                documentManager = RequestManager(request, documentService)
+                return documentManager.get("document/v1/Document/" + str(houseId))
+            return Response(response="Error: Documents Not Available", status=503)
+        return Response(response="Not Authorized", status=401)
+    return Response(response="Error: Homeowner Not Available", status=503)

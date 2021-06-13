@@ -27,4 +27,8 @@ spec:
               serviceName: tenant-gateway
               servicePort: 8079
             path: /tenant-gateway/*
+          - backend:
+              serviceName: message-service
+              servicePort: 8087
+            path: /socket.io/*
         
