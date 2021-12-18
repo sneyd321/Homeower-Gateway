@@ -1,8 +1,10 @@
 from server import create_app
+import os
 
 
+ENV = os.getenv('ENV')
 
+app = create_app(ENV)
 
-
-app = create_app()
-app.run(host="0.0.0.0", port=8080, debug=True)
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=8080)
